@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>数独 · Sudoku</title>
+<style>
+:root{
+  --bg:#eef2f8; --panel:#ffffff; --ink:#1f2937; --muted:#7c8aa0;
+  --line:#d6dcea; --line-strong:#8b96ab; --cell:#ffffff; --cell-alt:#f5f8fd;
+  --hl-same:#e6edfb; --hl-peer:#eef2fa; --accent:#2f6fed; --accent-soft:#dbe7ff;
+  --given:#1f2937; --user:#2f6fed; --wrong:#e5484d; --wrong-bg:#fdecec;
+  --note:#8a94a6; --shadow:0 10px 30px rgba(31,45,73,.10);
+}
+[data-theme="dark"]{
+  --bg:#12151c; --panel:#1b2029; --ink:#e6e9f0; --muted:#8a93a6;
+  --line:#2b323f; --line-strong:#4a5468; --cell:#1b2029; --cell-alt:#20262f;
+  --hl-same:#2a3b62; --hl-peer:#232a36; --accent:#5b93ff; --accent-soft:#22345c;
+  --given:#e6e9f0; --user:#7fb0ff; --wrong:#ff6b6f; --wrong-bg:#3a2226;
+  --note:#79839a; --shadow:0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  display:flex;flex-direction:column;align-items:center;
+  padding:14px 12px 24px;transition:background .25s,color .25s;
+  overflow-x:hidden;
+}
+.wrap{width:100%;max-width:520px}
+
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:20px;letter-spacing:.5px}
+.brand .logo{
+  width:30px;height:30px;border-radius:8px;background:var(--accent);
+  display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
+  gap:1.5px;padding:4px;
+}
+.brand .logo i{background:rgba(255,255,255,.85);border-radius:1px}
+.brand .logo i:nth-child(5){background:#fff}
+.icon-btn{
+  width:36px;height:36px;border-radius:10px;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);cursor:pointer;font-size:16px;
+  display:grid;place-items:center;transition:.15s;
+}
+.icon-btn:hover{border-color:var(--accent);color:var(--accent)}
+.head-actions{display:flex;gap:8px}
+
+.stats{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;
+}
+.stat{
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:8px 10px;box-shadow:var(--shadow);
+}
+.stat .k{font-size:11px;color:var(--muted);letter-spacing:.4px}
+.stat .v{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+.stat .v small{font-size:11px;font-weight:600;color:var(--muted)}
+
+.progress{height:5px;background:var(--line);border-radius:99px;overflow:hidden;margin:0 2px 10px}
+.progress i{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .3s}
+
+.board-shell{position:relative}
+#board{
+  display:grid;grid-template-columns:repeat(9,1fr);grid-template-rows:repeat(9,1fr);
+  aspect-ratio:1/1;width:100%;background:var(--line-strong);
+  border:2px solid var(--line-strong);border-radius:12px;overflow:hidden;
+  box-shadow:var(--shadow);user-select:none;
+}
+.cell{
+  position:relative;background:var(--cell);display:grid;place-items:center;
+  cursor:pointer;font-size:clamp(17px,5.2vw,26px);font-weight:600;
+  border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+  transition:background .12s;
+}
+.cell:nth-child(9n){border-right:none}
+.cell.row-end{border-bottom:none}
+.cell.box-right{border-right:2px solid var(--line-strong)}
+.cell.box-bottom{border-bottom:2px solid var(--line-strong)}
+.cell.peer{background:var(--hl-peer)}
+.cell.same{background:var(--hl-same)}
+.cell.sel{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent);z-index:2}
+.cell.given{color:var(--given)}
+.cell.user{color:var(--user)}
+.cell.err{color:var(--wrong);background:var(--wrong-bg)}
+.cell.err.sel{box-shadow:inset 0 0 0 2px var(--wrong)}
+.cell.hinted{animation:pop .45s ease}
+@keyframes pop{0%{transform:scale(.5);opacity:.2}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+.cell.wrong-flash{animation:shake .32s ease}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+
+.notes{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:2px}
+.notes span{display:grid;place-items:center;font-size:clamp(7px,2.1vw,10px);font-weight:600;color:var(--note);line-height:1}
+
+.overlay{
+  position:absolute;inset:0;background:rgba(255,255,255,.72);backdrop-filter:blur(5px);
+  border-radius:12px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:5;
+}
+[data-theme="dark"] .overlay{background:rgba(18,21,28,.78)}
+.overlay.on{display:flex}
+.overlay .big{font-size:22px;font-weight:800}
+.overlay p{margin:0;color:var(--muted);font-size:13px}
+
+.controls{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0 10px}
+.ctl{
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 4px 8px;
+  cursor:pointer;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:11px;transition:.15s;position:relative;
+}
+.ctl:hover{border-color:var(--accent);color:var(--accent)}
+.ctl:active{transform:scale(.95)}
+.ctl svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ctl.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.ctl .badge{
+  position:absolute;top:4px;right:7px;font-size:10px;font-weight:700;
+  background:var(--accent);color:#fff;border-radius:99px;padding:0 5px;line-height:15px;
+}
+.ctl.active .badge{background:#fff;color:var(--accent)}
+.ctl:disabled{opacity:.4;cursor:not-allowed}
+
+.pad{display:grid;grid-template-columns:repeat(9,1fr);gap:6px}
+.key{
+  aspect-ratio:1/1.15;border-radius:12px;border:1px solid var(--line);background:var(--panel);
+  color:var(--accent);font-size:clamp(16px,4.6vw,22px);font-weight:700;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;transition:.12s;
+}
+.key:hover{background:var(--accent-soft);border-color:var(--accent)}
+.key:active{transform:scale(.94)}
+.key.done{opacity:.28;pointer-events:none}
+.key small{font-size:9px;font-weight:600;color:var(--muted)}
+
+.seg{display:flex;gap:6px;margin-bottom:12px;background:var(--panel);padding:4px;border-radius:12px;border:1px solid var(--line)}
+.seg button{
+  flex:1;border:none;background:transparent;color:var(--muted);padding:7px 2px;border-radius:9px;
+  cursor:pointer;font-size:12.5px;font-weight:600;transition:.15s;font-family:inherit;
+}
+.seg button.on{background:var(--accent);color:#fff}
+
+.sheet-bg{position:fixed;inset:0;background:rgba(15,20,30,.5);backdrop-filter:blur(3px);z-index:40;display:none;align-items:center;justify-content:center;padding:18px}
+.sheet-bg.on{display:flex;animation:fade .2s}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.sheet{
+  background:var(--panel);border-radius:18px;padding:20px;width:100%;max-width:380px;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);animation:up .25s ease;
+}
+@keyframes up{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+.sheet h2{margin:0 0 4px;font-size:20px}
+.sheet .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+.row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}
+.row:last-of-type{border-bottom:none}
+.row .lbl small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.switch{width:44px;height:25px;border-radius:99px;background:var(--line);position:relative;cursor:pointer;transition:.2s;flex:none}
+.switch::after{content:"";position:absolute;top:2.5px;left:2.5px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.switch.on{background:var(--accent)}
+.switch.on::after{left:21.5px}
+.btn{
+  width:100%;border:none;border-radius:12px;padding:12px;font-size:15px;font-weight:700;cursor:pointer;
+  background:var(--accent);color:#fff;font-family:inherit;transition:.15s;margin-top:6px;
+}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.btn.ghost:hover{color:var(--ink);border-color:var(--muted)}
+.result{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 16px}
+.result div{background:var(--cell-alt);border-radius:10px;padding:9px;text-align:center}
+.result .k{font-size:11px;color:var(--muted)}
+.result .v{font-size:16px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.stars{font-size:30px;text-align:center;letter-spacing:5px;margin-bottom:6px}
+.record{font-size:12.5px;color:var(--muted);text-align:center;margin:0 0 4px}
+
+.confetti{position:fixed;top:-12px;width:9px;height:14px;z-index:60;pointer-events:none;border-radius:2px}
+@keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:.9}}
+.hint-tip{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;background:var(--ink);color:var(--bg);
+  padding:9px 16px;border-radius:99px;font-size:13px;font-weight:600;opacity:0;transition:.25s;z-index:70;pointer-events:none}
+.hint-tip.on{opacity:.94}
+footer{margin-top:14px;font-size:11.5px;color:var(--muted);text-align:center;line-height:1.7}
+kbd{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:10.5px;font-family:inherit}
+@media (max-width:400px){ .controls{gap:6px} .pad{gap:5px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><div class="logo"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>数独</div>
+    <div class="head-actions">
+      <button class="icon-btn" id="btnSettings" title="设置">⚙</button>
+      <button class="icon-btn" id="btnTheme" title="切换主题">◐</button>
+    </div>
+  </header>
+
+  <div class="seg" id="diffSeg">
+    <button data-d="easy" class="on">简单</button>
+    <button data-d="medium">中等</button>
+    <button data-d="hard">困难</button>
+    <button data-d="expert">专家</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">难度</div><div class="v" id="sDiff">简单</div></div>
+    <div class="stat"><div class="k">时间</div><div class="v" id="sTime">00:00</div></div>
+    <div class="stat"><div class="k">错误</div><div class="v" id="sErr">0<small id="sErrMax"></small></div></div>
+    <div class="stat"><div class="k">提示</div><div class="v" id="sHint">3</div></div>
+  </div>
+
+  <div class="progress"><i id="prog"></i></div>
+
+  <div class="board-shell">
+    <div id="board"></div>
+    <div class="overlay" id="overlay">
+      <div class="big">已暂停</div>
+      <p>点击继续游戏</p>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="ctl" id="btnUndo" title="撤销 (Ctrl+Z)">
+      <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>撤销</button>
+    <button class="ctl" id="btnErase" title="擦除 (Delete)">
+      <svg viewBox="0 0 24 24"><path d="M20 20H8.5L3 14.5a2 2 0 0 1 0-2.8L11.7 3a2 2 0 0 1 2.8 0l5.5 5.5a2 2 0 0 1 0 2.8L13 18"/><path d="M8 9l7 7"/></svg>擦除</button>
+    <button class="ctl" id="btnNotes" title="笔记 (N)">
+      <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>笔记<span class="badge" id="noteBadge" style="display:none">开</span></button>
+    <button class="ctl" id="btnHint" title="提示 (H)">
+      <svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>提示<span class="badge" id="hintBadge">3</span></button>
+    <button class="ctl" id="btnPause" title="暂停 / 新局">
+      <svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>暂停</button>
+  </div>
+
+  <div class="pad" id="pad"></div>
+
+  <footer>
+    <kbd>1-9</kbd> 填数 · <kbd>↑↓←→</kbd> 移动 · <kbd>N</kbd> 笔记 · <kbd>H</kbd> 提示 · <kbd>Ctrl+Z</kbd> 撤销 · <kbd>Del</kbd> 擦除
+  </footer>
+</div>
+
+<div class="sheet-bg" id="settingsSheet">
+  <div class="sheet">
+    <h2>设置</h2>
+    <p class="sub">调整规则与显示偏好</p>
+    <div class="row"><div class="lbl">高亮相同数字<small>选中格子时，同数字一起高亮</small></div><div class="switch on" data-k="hlSame"></div></div>
+    <div class="row"><div class="lbl">实时标错<small>填错立刻变红</small></div><div class="switch on" data-k="showErr"></div></div>
+    <div class="row"><div class="lbl">自动清除笔记<small>填数后清掉同行/列/宫的相关笔记</small></div><div class="switch on" data-k="autoNotes"></div></div>
+    <div class="row"><div class="lbl">错误上限 3 次<small>超过则本局失败</small></div><div class="switch" data-k="errLimit"></div></div>
+    <button class="btn ghost" id="btnCloseSettings">关闭</button>
+  </div>
+</div>
+
+<div class="sheet-bg" id="winSheet">
+  <div class="sheet" style="text-align:center">
+    <div class="stars" id="winStars">★★★</div>
+    <h2 id="winTitle">完成！</h2>
+    <p class="sub" id="winSub">你解开了这道数独</p>
+    <div class="result">
+      <div><div class="k">难度</div><div class="v" id="winDiff">简单</div></div>
+      <div><div class="k">用时</div><div class="v" id="winTime">00:00</div></div>
+      <div><div class="k">错误</div><div class="v" id="winErr">0</div></div>
+    </div>
+    <p class="record" id="winRecord"></p>
+    <button class="btn" id="btnNext">再来一局</button>
+    <button class="btn ghost" id="btnStay">查看棋盘</button>
+  </div>
+</div>
+
+<div class="hint-tip" id="tip"></div>
+
+<script>
+"use strict";
+
+/* ---------- 数独引擎 ---------- */
+const N = 81;
+const idx = (r, c) => r * 9 + c;
+const PEERS = [];
+for (let i = 0; i < N; i++) {
+  const r = (i / 9) | 0, c = i % 9, br = ((r / 3) | 0) * 3, bc = ((c / 3) | 0) * 3;
+  const s = new Set();
+  for (let k = 0; k < 9; k++) { s.add(idx(r, k)); s.add(idx(k, c)); s.add(idx(br + (k / 3 | 0), bc + k % 3)); }
+  s.delete(i);
+  PEERS.push([...s]);
+}
+
+function candidates(board, i) {
+  if (board[i]) return 0;
+  let mask = 0b111111111;
+  for (const p of PEERS[i]) if (board[p]) mask &= ~(1 << (board[p] - 1));
+  return mask;
+}
+
+// 求解并统计解的个数（超过 limit 提前退出）
+function countSolutions(board, limit = 2) {
+  const b = board.slice();
+  let count = 0;
+  const rec = () => {
+    if (count >= limit) return;
+    let best = -1, bestMask = 0, bestN = 10;
+    for (let i = 0; i < N; i++) {
+      if (b[i]) continue;
+      const m = candidates(b, i);
+      if (!m) { count = -1e9; return; }   // 死路
+      const n = bitCount(m);
+      if (n < bestN) { bestN = n; bestMask = m; best = i; if (n === 1) break; }
+    }
+    if (best === -1) { count++; return; }  // 填满 = 一个解
+    let m = bestMask;
+    while (m) {
+      const bit = m & -m;
+      b[best] = 32 - Math.clz32(bit);
+      m ^= bit;
+      rec();
+      b[best] = 0;
+      if (count >= limit) return;
+    }
+  };
+  rec();
+  return count < 0 ? 0 : count;
+}
+const bitCount = m => { let n = 0; while (m) { m &= m - 1; n++; } return n; };
+
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+// 生成一份完整终盘
+function fullBoard() {
+  const b = new Array(N).fill(0);
+  const fill = i => {
+    if (i === N) return true;
+    const m = candidates(b, i);
+    const opts = [];
+    for (let v = 1; v <= 9; v++) if (m & (1 << (v - 1))) opts.push(v);
+    shuffle(opts);
+    for (const v of opts) { b[i] = v; if (fill(i + 1)) return true; b[i] = 0; }
+    return false;
+  };
+  fill(0);
+  return b;
+}
+
+const CLUES = { easy: 41, medium: 34, hard: 30, expert: 26 };
+
+function generate(diff) {
+  const solution = fullBoard();
+  const puzzle = solution.slice();
+  const order = shuffle([...Array(N).keys()]);
+  const target = CLUES[diff];
+  let left = N;
+  for (const i of order) {
+    if (left <= target) break;
+    const backup = puzzle[i];
+    if (backup === 0) continue;
+    puzzle[i] = 0;
+    if (countSolutions(puzzle, 2) !== 1) { puzzle[i] = backup; continue; }
+    left--;
+  }
+  return { puzzle, solution };
+}
+
+/* ---------- 状态 ---------- */
+const S = {
+  diff: "easy", puzzle: [], solution: [], given: [], cur: [], notes: [],
+  sel: -1, noteMode: false, mistakes: 0, hints: 3,
+  time: 0, running: false, over: false, history: [],
+  cfg: { hlSame: true, showErr: true, autoNotes: true, errLimit: false },
+  theme: "light"
+};
+const $ = id => document.getElementById(id);
+const boardEl = $("board"), cells = [];
+
+/* ---------- 初始化棋盘 DOM ---------- */
+for (let i = 0; i < N; i++) {
+  const r = (i / 9) | 0, c = i % 9;
+  const d = document.createElement("div");
+  d.className = "cell";
+  if (r % 3 === 2 && r !== 8) d.classList.add("box-bottom");
+  if (c % 3 === 2 && c !== 8) d.classList.add("box-right");
+  if (r === 8) d.classList.add("row-end");
+  d.addEventListener("click", () => select(i));
+  boardEl.appendChild(d);
+  cells.push(d);
+}
+const padEl = $("pad"), keys = [];
+for (let v = 1; v <= 9; v++) {
+  const b = document.createElement("button");
+  b.className = "key";
+  b.innerHTML = `${v}<small></small>`;
+  b.addEventListener("click", () => input(v));
+  padEl.appendChild(b); keys.push(b);
+}
+
+/* ---------- 新局 ---------- */
+function newGame(diff, silent) {
+  if (diff) S.diff = diff;
+  tip("正在出题…");
+  setTimeout(() => {
+    const { puzzle, solution } = generate(S.diff);
+    S.puzzle = puzzle; S.solution = solution;
+    S.given = puzzle.map(v => v !== 0);
+    S.cur = puzzle.slice();
+    S.notes = new Array(N).fill(0);
+    S.sel = -1; S.mistakes = 0; S.hints = 3; S.time = 0;
+    S.over = false; S.history = []; S.noteMode = false;
+    S.running = true;
+    $("overlay").classList.remove("on");
+    $("winSheet").classList.remove("on");
+    [...document.querySelectorAll("#diffSeg button")].forEach(b => b.classList.toggle("on", b.dataset.d === S.diff));
+    $("sDiff").textContent = DIFF_NAME[S.diff];
+    render(); save();
+    if (!silent) tip(`新游戏 · ${DIFF_NAME[S.diff]}`);
+  }, 30);
+}
+const DIFF_NAME = { easy: "简单", medium: "中等", hard: "困难", expert: "专家" };
+
+/* ---------- 渲染 ---------- */
+function render() {
+  const sel = S.sel, sv = sel >= 0 ? S.cur[sel] : 0;
+  const sr = sel >= 0 ? (sel / 9) | 0 : -1, sc = sel >= 0 ? sel % 9 : -1;
+  const sbr = sr >= 0 ? ((sr / 3) | 0) * 3 : -1, sbc = sc >= 0 ? ((sc / 3) | 0) * 3 : -1;
+
+  for (let i = 0; i < N; i++) {
+    const el = cells[i], r = (i / 9) | 0, c = i % 9, v = S.cur[i];
+    el.className = "cell";
+    if (r % 3 === 2 && r !== 8) el.classList.add("box-bottom");
+    if (c % 3 === 2 && c !== 8) el.classList.add("box-right");
+    if (r === 8) el.classList.add("row-end");
+
+    if (sel >= 0 && i !== sel) {
+      const peer = (r === sr || c === sc || (r >= sbr && r < sbr + 3 && c >= sbc && c < sbc + 3));
+      if (peer) el.classList.add("peer");
+      if (S.cfg.hlSame && sv && v === sv) el.classList.add("same");
+    }
+    if (i === sel) el.classList.add("sel");
+
+    const wrong = v && v !== S.solution[i];
+    if (wrong && S.cfg.showErr) el.classList.add("err");
+    else el.classList.add(S.given[i] ? "given" : "user");
+
+    const n = S.notes[i];
+    if (!v && n) {
+      let html = '<div class="notes">';
+      for (let k = 1; k <= 9; k++) html += `<span>${n & (1 << (k - 1)) ? k : ""}</span>`;
+      el.innerHTML = html + "</div>";
+    } else {
+      el.textContent = v || "";
+    }
+  }
+
+  // 数字键盘：剩余个数
+  for (let v = 1; v <= 9; v++) {
+    let left = 9;
+    for (let i = 0; i < N; i++) if (S.cur[i] === v) left--;
+    keys[v - 1].classList.toggle("done", left <= 0);
+    keys[v - 1].querySelector("small").textContent = left > 0 ? left : "";
+  }
+
+  // 统计
+  let filled = 0;
+  for (let i = 0; i < N; i++) if (S.cur[i] && S.cur[i] === S.solution[i]) filled++;
+  $("prog").style.width = ((filled - S.puzzle.filter(Boolean).length) / (N - S.puzzle.filter(Boolean).length) * 100).toFixed(1) + "%";
+  $("sErr").innerHTML = S.mistakes + (S.cfg.errLimit ? "<small>/3</small>" : "");
+  $("sHint").textContent = S.hints;
+  $("hintBadge").textContent = S.hints;
+  $("btnHint").disabled = S.hints <= 0;
+  $("btnUndo").disabled = S.history.length === 0;
+  $("btnNotes").classList.toggle("active", S.noteMode);
+  $("noteBadge").style.display = S.noteMode ? "" : "none";
+  renderTime();
+}
+function renderTime() {
+  const m = String((S.time / 60) | 0).padStart(2, "0"), s = String(S.time % 60).padStart(2, "0");
+  $("sTime").textContent = `${m}:${s}`;
+}
+
+/* ---------- 交互 ---------- */
+function select(i) {
+  if (S.over) return;
+  S.sel = i; resume(); render();
+}
+function input(v) {
+  if (S.over || S.sel < 0) return;
+  resume();
+  const i = S.sel;
+  if (S.given[i]) { tip("题目给定的数字不能修改"); return; }
+
+  if (S.noteMode) {
+    if (S.cur[i]) return;
+    const before = S.notes[i];
+    const after = before ^ (1 << (v - 1));
+    if (before === after) return;
+    S.history.push({ i, vBefore: 0, vAfter: 0, nBefore: before, nAfter: after });
+    S.notes[i] = after;
+    render(); save(); return;
+  }
+
+  if (S.cur[i] === v) return;
+  const correct = v === S.solution[i];
+  S.history.push({ i, vBefore: S.cur[i], vAfter: v, nBefore: S.notes[i], nAfter: 0 });
+  S.cur[i] = v; S.notes[i] = 0;
+
+  if (!correct) {
+    S.mistakes++;
+    cells[i].classList.add("wrong-flash");
+    setTimeout(() => cells[i].classList.remove("wrong-flash"), 340);
+    if (S.cfg.errLimit && S.mistakes >= 3) { render(); save(); return gameOver(); }
+  } else if (S.cfg.autoNotes) {
+    for (const p of PEERS[i]) S.notes[p] &= ~(1 << (v - 1));
+  }
+  render(); save();
+  if (correct && isWin()) win();
+}
+function erase() {
+  if (S.over || S.sel < 0) return;
+  resume();
+  const i = S.sel;
+  if (S.given[i] || (!S.cur[i] && !S.notes[i])) return;
+  S.history.push({ i, vBefore: S.cur[i], vAfter: 0, nBefore: S.notes[i], nAfter: 0 });
+  S.cur[i] = 0; S.notes[i] = 0;
+  render(); save();
+}
+function undo() {
+  if (!S.history.length || S.over) return;
+  resume();
+  const h = S.history.pop();
+  S.cur[h.i] = h.vBefore; S.notes[h.i] = h.nBefore;
+  S.sel = h.i;
+  render(); save();
+}
+function hint() {
+  if (S.over) return;
+  resume();
+  if (S.hints <= 0) { tip("提示次数已用完"); return; }
+  let target = -1;
+  if (S.sel >= 0 && !S.given[S.sel] && S.cur[S.sel] !== S.solution[S.sel]) target = S.sel;
+  else {
+    const pool = [];
+    for (let i = 0; i < N; i++) if (!S.given[i] && S.cur[i] !== S.solution[i]) pool.push(i);
+    if (!pool.length) return;
+    // 优先给「候选数最少」的格子，更有学习价值
+    pool.sort((a, b) => bitCount(candidates(S.cur, a)) - bitCount(candidates(S.cur, b)));
+    target = pool[0];
+  }
+  S.hints--;
+  S.history.push({ i: target, vBefore: S.cur[target], vAfter: S.solution[target], nBefore: S.notes[target], nAfter: 0 });
+  S.cur[target] = S.solution[target];
+  S.notes[target] = 0;
+  if (S.cfg.autoNotes) for (const p of PEERS[target]) S.notes[p] &= ~(1 << (S.solution[target] - 1));
+  S.sel = target;
+  render();
+  cells[target].classList.add("hinted");
+  setTimeout(() => cells[target].classList.remove("hinted"), 460);
+  save();
+  tip(`提示：第 ${((target / 9) | 0) + 1} 行第 ${target % 9 + 1} 列是 ${S.solution[target]}`);
+  if (isWin()) win();
+}
+const isWin = () => S.cur.every((v, i) => v === S.solution[i]);
+
+/* ---------- 计时 ---------- */
+setInterval(() => {
+  if (S.running && !S.over && document.visibilityState === "visible") { S.time++; renderTime(); if (S.time % 5 === 0) save(); }
+}, 1000);
+function pause() { if (S.over) return; S.running = false; $("overlay").classList.add("on"); }
+function resume() { if (S.over) return; S.running = true; $("overlay").classList.remove("on"); }
+
+/* ---------- 结束 ---------- */
+function win() {
+  S.over = true; S.running = false;
+  const best = loadBest();
+  const prev = best[S.diff];
+  const isRecord = !prev || S.time < prev;
+  if (isRecord) { best[S.diff] = S.time; localStorage.setItem("sudoku_best", JSON.stringify(best)); }
+  const stars = S.mistakes === 0 && S.hints === 3 ? "★★★" : S.mistakes <= 2 ? "★★☆" : "★☆☆";
+  $("winStars").textContent = stars;
+  $("winTitle").textContent = isRecord && prev ? "新纪录！" : "完成！";
+  $("winSub").textContent = DIFF_NAME[S.diff] + " 难度已解开";
+  $("winDiff").textContent = DIFF_NAME[S.diff];
+  $("winTime").textContent = $("sTime").textContent;
+  $("winErr").textContent = S.mistakes;
+  $("winRecord").textContent = isRecord && prev
+    ? `刷新了原纪录 ${fmt(prev)}`
+    : prev ? `历史最佳 ${fmt(prev)}` : "这是该难度的首个纪录";
+  $("winSheet").classList.add("on");
+  confetti(); render(); save();
+}
+function gameOver() {
+  S.over = true; S.running = false;
+  $("winStars").textContent = "✕";
+  $("winTitle").textContent = "挑战失败";
+  $("winSub").textContent = "错误已达 3 次，再试一次吧";
+  $("winDiff").textContent = DIFF_NAME[S.diff];
+  $("winTime").textContent = $("sTime").textContent;
+  $("winErr").textContent = S.mistakes;
+  $("winRecord").textContent = "";
+  $("winSheet").classList.add("on");
+  save();
+}
+const fmt = t => `${String((t / 60) | 0).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+const loadBest = () => { try { return JSON.parse(localStorage.getItem("sudoku_best")) || {}; } catch { return {}; } };
+
+function confetti() {
+  const colors = ["#2f6fed", "#f5a623", "#e5484d", "#3ec46d", "#a855f7", "#22d3ee"];
+  for (let i = 0; i < 70; i++) {
+    const d = document.createElement("div");
+    d.className = "confetti";
+    d.style.left = Math.random() * 100 + "vw";
+    d.style.background = colors[(Math.random() * colors.length) | 0];
+    d.style.animation = `fall ${2 + Math.random() * 1.8}s linear ${Math.random() * .6}s forwards`;
+    d.style.opacity = .9;
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 4600);
+  }
+}
+
+/* ---------- 存档 ---------- */
+function save() {
+  if (!S.puzzle.length) return;
+  localStorage.setItem("sudoku_save", JSON.stringify({
+    diff: S.diff, puzzle: S.puzzle, solution: S.solution, cur: S.cur, notes: S.notes,
+    mistakes: S.mistakes, hints: S.hints, time: S.time, over: S.over, cfg: S.cfg, theme: S.theme
+  }));
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem("sudoku_save"));
+    if (!d || !d.puzzle || d.puzzle.length !== N) return false;
+    Object.assign(S, {
+      diff: d.diff, puzzle: d.puzzle, solution: d.solution,
+      given: d.puzzle.map(v => v !== 0), cur: d.cur, notes: d.notes,
+      mistakes: d.mistakes, hints: d.hints, time: d.time, over: !!d.over,
+      history: [], sel: -1, noteMode: false, running: !d.over
+    });
+    if (d.cfg) S.cfg = { ...S.cfg, ...d.cfg };
+    if (d.theme) S.theme = d.theme;
+    return true;
+  } catch { return false; }
+}
+
+/* ---------- 设置 / 主题 ---------- */
+function applyTheme() {
+  document.documentElement.dataset.theme = S.theme;
+  $("btnTheme").textContent = S.theme === "dark" ? "◑" : "◐";
+}
+function applyCfg() {
+  document.querySelectorAll(".switch").forEach(sw => sw.classList.toggle("on", !!S.cfg[sw.dataset.k]));
+}
+let tipTimer;
+function tip(msg) {
+  const t = $("tip"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(tipTimer); tipTimer = setTimeout(() => t.classList.remove("on"), 1800);
+}
+
+/* ---------- 事件绑定 ---------- */
+$("btnUndo").onclick = undo;
+$("btnErase").onclick = erase;
+$("btnNotes").onclick = () => { S.noteMode = !S.noteMode; render(); tip(S.noteMode ? "笔记模式：开" : "笔记模式：关"); };
+$("btnHint").onclick = hint;
+$("btnPause").onclick = () => { S.running ? pause() : resume(); };
+$("overlay").onclick = resume;
+$("btnTheme").onclick = () => { S.theme = S.theme === "dark" ? "light" : "dark"; applyTheme(); save(); };
+$("btnSettings").onclick = () => $("settingsSheet").classList.add("on");
+$("btnCloseSettings").onclick = () => $("settingsSheet").classList.remove("on");
+$("settingsSheet").onclick = e => { if (e.target.id === "settingsSheet") $("settingsSheet").classList.remove("on"); };
+document.querySelectorAll(".switch").forEach(sw => sw.onclick = () => {
+  const k = sw.dataset.k; S.cfg[k] = !S.cfg[k]; applyCfg(); render(); save();
+});
+$("diffSeg").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.d === S.diff && !S.over) return;
+  if (!S.over && S.time > 5 && !confirm("开始新局将放弃当前进度，确定？")) return;
+  newGame(b.dataset.d);
+};
+$("btnNext").onclick = () => { $("winSheet").classList.remove("on"); newGame(S.diff); };
+$("btnStay").onclick = () => $("winSheet").classList.remove("on");
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  const k = e.key;
+  if (/^[1-9]$/.test(k)) { input(+k); e.preventDefault(); return; }
+  if (k === "0" || k === "Delete" || k === "Backspace") { erase(); e.preventDefault(); return; }
+  if (k === "n" || k === "N") { $("btnNotes").click(); return; }
+  if (k === "h" || k === "H") { hint(); return; }
+  if ((k === "z" || k === "Z") && (e.ctrlKey || e.metaKey)) { undo(); e.preventDefault(); return; }
+  if (k.startsWith("Arrow")) {
+    e.preventDefault(); resume();
+    let r = S.sel < 0 ? 4 : (S.sel / 9) | 0, c = S.sel < 0 ? 4 : S.sel % 9;
+    if (k === "ArrowUp") r = (r + 8) % 9;
+    if (k === "ArrowDown") r = (r + 1) % 9;
+    if (k === "ArrowLeft") c = (c + 8) % 9;
+    if (k === "ArrowRight") c = (c + 1) % 9;
+    select(idx(r, c));
+  }
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden && S.running && !S.over) pause(); });
+
+/* ---------- 启动 ---------- */
+if (load()) {
+  applyTheme(); applyCfg();
+  [...document.querySelectorAll("#diffSeg button")].forEach(b => b.classList.toggle("on", b.dataset.d === S.diff));
+  $("sDiff").textContent = DIFF_NAME[S.diff];
+  render();
+  if (S.over) $("overlay").classList.add("on");
+  tip("已恢复上次的进度");
+} else {
+  S.theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  applyTheme(); applyCfg();
+  newGame("easy", true);
+}
+</script>
+</body>
+</html>
