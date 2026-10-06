@@ -2,4 +2,4 @@
 
 一个 sudoku game。
 
-在线玩 / Play: https://incipient2027.github.io/sudoku/
+在线玩 / Play: https://kevinmasai.github.io/sudoku/
